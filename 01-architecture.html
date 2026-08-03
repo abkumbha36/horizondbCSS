@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Component 1: Architecture, Control Plane / Data Plane</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 20px;color:#222}
+h1{color:#0b5cab}h2{color:#0b5cab;border-bottom:2px solid #eaeaea;padding-bottom:6px;margin-top:40px}
+.card{background:#f7f9fb;border:1px solid #ddd;border-radius:8px;padding:16px;margin:12px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0}
+th,td{border:1px solid #ddd;padding:8px;text-align:left}
+th{background:#0b5cab;color:#fff}
+.q{background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px;margin:10px 0}
+.q b{display:block;margin-bottom:6px}
+summary{cursor:pointer;color:#0b5cab;font-weight:bold}
+nav a{margin-right:16px}
+.diagram{background:#eef4fb;border:1px dashed #0b5cab;padding:16px;border-radius:6px;font-family:monospace;white-space:pre;overflow-x:auto}
+</style></head>
+<body>
+<nav><a href="index.html">&larr; Back to course home</a> | <a href="02-connectivity-networking.html">Next: Connectivity and Networking &rarr;</a></nav>
+<h1>Component 1: Architecture, Control Plane / Data Plane Overview</h1>
+<p><em>Duration: 60-75 minutes</em></p>
+
+<h2>Learning objectives</h2>
+<ul>
+<li>Describe HorizonDB's overall architecture and where it fits in the Azure Data platform.</li>
+<li>Explain the difference between control plane and data plane responsibilities.</li>
+<li>Trace the lifecycle of a cluster from provisioning request to serving traffic.</li>
+<li>Identify which HorizonDB components live in the control plane versus the data plane.</li>
+<li>Explain how control plane operations (create, scale, patch, failover) affect the data plane.</li>
+</ul>
+
+<h2>1.1 What is HorizonDB</h2>
+<p>HorizonDB is a managed, PostgreSQL-compatible database service. As with most managed data platforms, its architecture is split into two conceptual planes:</p>
+<ul>
+<li><strong>Control plane</strong>: responsible for the lifecycle and management of resources - creating, updating, scaling, patching, and deleting clusters, along with enforcing configuration, RBAC, and orchestration of maintenance operations.</li>
+<li><strong>Data plane</strong>: responsible for actually serving customer traffic - accepting connections, executing queries, storing and retrieving data, and replicating for high availability.</li>
+</ul>
+<p>This separation lets the platform scale management operations independently from customer query traffic, and it isolates faults so that, ideally, a control plane issue does not always translate into a data plane outage, and vice versa.</p>
+
+<h2>1.2 Control plane responsibilities</h2>
+<div class="card">
+<ul>
+<li>Resource provisioning (create/delete cluster, create/delete server group)</li>
+<li>Configuration management (server parameters, firewall rules, networking configuration)
+<li>Orchestrating scaling operations (compute tier changes, storage scaling)</li>
+<li>Coordinating patching and version upgrades</li>
+<li>Triggering and coordinating failover</li>
+<li>Managing backup policy and orchestrating restore requests</li>
+<li>Exposing management APIs (ARM/RP layer) used by portal, CLI, and automation</li>
+<li>RBAC, resource locks, and tagging</li>
+</ul>
+</div>
+
+<h2>1.3 Data plane responsibilities</h2>
+<div class="card">
+<ul>
+<li>Accepting client connections on the database endpoint</li>
+<li>Authenticating and authorizing individual database sessions</li>
+<li>Query parsing, planning, and execution</li>
+<li>Transaction management and locking</li>
+<li>Storage engine operations - reads, writes, WAL (write-ahead log)</li>
+<li>Replication to standby/replica nodes</li>
+<li>Local caching (buffer pool, query cache where applicable)</li>
+</ul>
+</div>
+
+<h2>1.4 High-level lifecycle flow</h2>
+<div class="diagram">
+Customer/Portal/CLI
+        |
+        v
+  [Control Plane / RP layer]
+        |-- validates request, RBAC, quota
+        |-- persists desired state
+        |-- orchestrates provisioning workflow
+        v
+  [Compute + Storage allocation]
+        |
+        v
+  [Data Plane bootstrap: PostgreSQL engine starts,
+   networking attached, HA topology configured]
+        |
+        v
+  Cluster reaches "Ready" state
+        |
+        v
+  Client connections now served by [Data Plane]
+  while ongoing management (scale/patch/failover)
+  continues to be driven by [Control Plane]
+</div>
+
+<h2>1.5 Why the distinction matters for support</h2>
+<ul>
+<li>A "cluster stuck in provisioning" or "scaling operation failed" symptom generally points to the <strong>control plane</strong> (RP/orchestration layer).</li>
+<li>A "cannot connect," "query is slow," or "queries are failing" symptom generally points to the <strong>data plane</strong> (engine, storage, network path to the engine).</li>
+<li>Some issues span both planes: for example, a failed failover may show as a control plane operation failure, followed by data plane connectivity errors.</li>
+<li>Correctly identifying which plane is affected shortens time-to-diagnosis and directs the case to the right internal team.</li>
+</ul>
+
+<h2>1.6 Build and deployment context (preview of Component 6)</h2>
+<p>Build and deployment issues - covered in depth in the Troubleshooting component - typically originate in the control plane, since they involve provisioning workflows, orchestration steps, and resource allocation before the data plane ever becomes reachable. Recognizing this up front helps you triage "cluster never became ready" tickets correctly.</p>
+
+<h2>Knowledge Check: 20 Questions</h2>
+<div class="q"><b>1. What is the primary purpose of the control plane?</b>Managing the lifecycle and configuration of resources.<br>A) Serving customer queries B) Managing lifecycle/configuration of resources C) Storing table data D) Caching query results<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>2. What is the primary purpose of the data plane?</b>A) Enforcing RBAC B) Orchestrating patch rollouts C) Serving customer connections and queries D) Managing quota<details><summary>Show answer</summary>C</details></div>
+<div class="q"><b>3. Which layer handles ARM/RP API requests?</b>A) Data plane B) Control plane C) Client SDK D) PostgreSQL extension<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>4. Which layer executes SQL queries?</b>A) Control plane B) Data plane C) Portal D) CLI<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>5. A customer reports their cluster is stuck in "Provisioning." Which plane is most likely involved?</b>A) Data plane B) Control plane C) Client network D) DNS resolver<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>6. A customer reports connection timeouts to an already-running cluster. Which plane is most likely involved first?</b>A) Control plane B) Data plane C) Billing plane D) RBAC plane<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>7. Why are control and data planes architecturally separated?</b>A) To reduce cost only B) To allow independent scaling and fault isolation C) To remove the need for authentication D) To eliminate backups<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>8. Which of the following is a control plane operation?</b>A) Running a SELECT query B) Scaling compute tier C) Writing to a table D) Query planning<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>9. Which of the following is a data plane operation?</b>A) Creating a firewall rule via CLI B) Provisioning a new cluster C) Executing a transaction D) Approving an RBAC role assignment<details><summary>Show answer</summary>C</details></div>
+<div class="q"><b>10. What triggers a failover operation?</b>A) Only manual customer request B) Control plane orchestration, either automatic or manual C) A SELECT query D) A schema change<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>11. After failover completes, which plane resumes serving client traffic?</b>A) Control plane B) Data plane C) Billing plane D) Identity plane<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>12. What does WAL stand for in the data plane context?</b>A) Wide Area Link B) Write-Ahead Log C) Workload Allocation List D) Web Access Layer<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>13. Which component is responsible for enforcing quota and RBAC before a cluster is created?</b>A) Data plane engine B) Control plane C) Client driver D) Storage engine<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>14. What state indicates a cluster has completed provisioning and is serving traffic?</b>A) Deleting B) Ready C) Validating D) Queued<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>15. A patch/version upgrade is orchestrated by which plane?</b>A) Data plane only B) Control plane C) Client application D) DNS<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>16. Why is identifying the affected plane important for support engineers?</b>A) It changes the customer's billing B) It shortens time-to-diagnosis and routes the issue correctly C) It is not important D) It only matters for developers<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>17. Which scenario spans both planes?</b>A) A read-only SELECT query B) A failed failover followed by data plane connection errors C) Viewing documentation D) Reading Cloud Academy content<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>18. Which of these is NOT typically a control plane responsibility?</b>A) Configuring firewall rules B) Orchestrating backup policy C) Executing a customer's SQL transaction D) Coordinating scaling operations<details><summary>Show answer</summary>C</details></div>
+<div class="q"><b>19. Build and deployment issues most often originate in which plane?</b>A) Data plane B) Control plane C) Client plane D) Storage plane only<details><summary>Show answer</summary>B</details></div>
+<div class="q"><b>20. What is a key benefit of fault isolation between planes?</b>A) A control plane issue does not always cause a data plane outage B) Backups become unnecessary C) TLS is no longer required D) DNS resolution is bypassed<details><summary>Show answer</summary>A</details></div>
+
+<nav><a href="index.html">&larr; Back to course home</a> | <a href="02-connectivity-networking.html">Next: Connectivity and Networking &rarr;</a></nav>
+</body></html>
